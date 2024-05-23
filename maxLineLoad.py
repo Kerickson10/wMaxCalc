@@ -53,23 +53,30 @@ def maxMoment(beamLength,supportPositions,lineLoad,maxAllowMoment, printGraphs="
     maxCalcMoment = beam.get_bending_moment(return_absmax=True)
 
     # lineLoad = convergence(beamLength,supportPositions,lineLoad,maxAllowMoment, 0, 100000)
-    print(f'Max Line Load is {lineLoad} lbs/ft')
-    print(f'Maximum Bending Moment is {np.ceil(maxCalcMoment)} ft-lbs')
-    
+    # print(f'Max Line Load is {lineLoad} lbs/ft')
+    # print(f'Maximum Bending Moment is {np.ceil(maxCalcMoment)} ft-lbs')
+
     for position in supportPositions:
-        print(f"Support Reaction at {position}\' is {np.ceil(abs(beam.get_reaction(position, 'y')))} lbs")
-        supportLoads.append(np.ceil(abs(beam.get_reaction(beamLength, 'y'))))
+        
+        supportLoads.append(np.ceil(abs(beam.get_reaction(position, 'y'))))
 
     return maxCalcMoment, supportLoads
 
-def convergence(beamLength,supportPositions, target, low, high, tolerance=.01):
+def convergence(beamLength,supportPositions, target, low, high, tolerance=.1):
     
     for _ in range(100):
         lineLoad = (low + high) / 2
-        print(lineLoad)
+        print(f'Try {lineLoad} lb/ft')
         maxCalcMoment, supportLoads = maxMoment(beamLength,supportPositions,lineLoad, target)
 
-        if abs(maxCalcMoment - target)/100 < tolerance:
+        if abs(maxCalcMoment - target) < tolerance:
+            print(f'Max Line Load is {lineLoad} lbs/ft')
+            print(f'Maximum Bending Moment is {maxCalcMoment} ft-lbs')
+
+            i=0
+            for position in supportPositions:
+                print(f"Support Reaction at {position}\' is {np.ceil(abs(supportLoads[i]))} lbs")
+                i += 1
             return lineLoad, supportLoads
 
         if maxCalcMoment < target:
@@ -79,6 +86,6 @@ def convergence(beamLength,supportPositions, target, low, high, tolerance=.01):
     
     raise ValueError("Convergence not found")
     
-lineLoad, supportLoads = convergence(20,[0,10,20],479000, 0, 50000)
+lineLoad, supportLoads = convergence(100,[5,27,59,73],3820000, 0, 200000)
 
 # maxCalcMoment = maxLineLoad(20,[0,10,20],479000)
