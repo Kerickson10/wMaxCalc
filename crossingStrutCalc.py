@@ -3,14 +3,15 @@ from indeterminatebeam import Beam, Support, DistributedLoad
 import numpy as np
 import time
 
-def maxMoment(beamLength, supportPositions, lineLoad, printGraphs="No"):
+def maxMoment(beamLength, supportPositions, lineLoad, maxAllowMoment, printGraphs="No"):
     """
-    Analyzes a beam with given length, support positions, and line load.
+    Analyzes a corner post with given sheeted height and tributary width.
 
     Parameters:
     - beamLength: beam length in feet.
     - supportPositions: list of support positions in feet.
     - lineLoad: line load in lbs/ft.
+    - maxAllowMoment: maximum allowable moment in ft-lbs.
     """
     start_time = time.time()  # Start timing
     
@@ -66,7 +67,7 @@ def maxLineLoadConvergence(beamLength, supportPositions, target, initial_guess, 
     print()
 
     def f(lineLoad):
-        maxCalcMoment, _ = maxMoment(beamLength, supportPositions, lineLoad)
+        maxCalcMoment, _ = maxMoment(beamLength, supportPositions, lineLoad, target)
         return maxCalcMoment - target
 
     def df(lineLoad):
@@ -82,7 +83,7 @@ def maxLineLoadConvergence(beamLength, supportPositions, target, initial_guess, 
         print(f'Try {lineLoad} lb/ft')
     
     # Final evaluation
-    maxCalcMoment, supportLoads = maxMoment(beamLength, supportPositions, lineLoad)
+    maxCalcMoment, supportLoads = maxMoment(beamLength, supportPositions, lineLoad, target)
     
     end_time = time.time()  # End timing
     print(f"newton_raphson_optimize function execution time: {end_time - start_time:.2f} seconds")
@@ -97,6 +98,6 @@ def maxLineLoadConvergence(beamLength, supportPositions, target, initial_guess, 
 
 
 # Example usage
-lineLoad, supportLoads = maxLineLoadConvergence(100, [0,50,100], 654000, initial_guess=10000)
+lineLoad, supportLoads = maxLineLoadConvergence(100, [5, 27, 59, 73], 3820000, initial_guess=10000)
 
 
