@@ -1,103 +1,139 @@
-#!/usr/bin/python3
-from indeterminatebeam import Beam, Support, DistributedLoad
+import pandas as pd
 import numpy as np
-import time
 
-def maxMoment(beamLength, supportPositions, lineLoad, maxAllowMoment, printGraphs="No"):
+def calculate_moment_at_point(UDL, span, x):
     """
-    Analyzes a corner post with given sheeted height and tributary width.
+    Calculate the bending moment at any point along a simply supported beam
+    with a central support under a uniformly distributed load (UDL).
 
     Parameters:
-    - beamLength: beam length in feet.
-    - supportPositions: list of support positions in feet.
-    - lineLoad: line load in lbs/ft.
-    - maxAllowMoment: maximum allowable moment in ft-lbs.
+    - UDL: Uniformly distributed load in units of force per length (e.g., N/m or lb/ft)
+    - span: Length of one span in the beam
+    - x: Distance from the left end of the beam to the point where the moment is calculated
+
+    Returns:
+    - Moment at the specified point
     """
-    start_time = time.time()  # Start timing
-    
-    # Initialize the beam with the given length and modulus of elasticity
-    beam = Beam(beamLength, E=29000000)  # E is the modulus of elasticity in psi
+    # print(f'Try {x} ft')
+    # Reactions at supports
+    R_A = R_C = 3 * UDL * span / 8
+    R_B = 10 * UDL * span / 8
 
-    # Update units for the beam analysis
-    units = {'length': 'ft', 'force': 'lbf', 'distributed': 'lbf/ft', 
-             'moment': 'lbf.ft', 'E': 'lbf/in2', 'I': 'in4', 'deflection': 'in'}
-    for key, unit in units.items():
-        beam.update_units(key, unit)
-    
-    # Add supports to the beam
-    for position in supportPositions:
-        beam.add_supports(Support(position, (1, 1, 0)))  # Defines a pin support
-    
-    # Add the distributed load to the beam
-    beam.add_loads(DistributedLoad(lineLoad, span=(0, beamLength), angle=90))
-    
-    # Perform beam analysis
-    beam.analyse()
-    
-    # Plot results if requested
-    if printGraphs == "Yes":
-        beam.plot_beam_external().show()
-        beam.plot_beam_internal().show()
+    # Central support moment
+    M_B = -0.125 * UDL * span**2
 
-    # Calculate and return maximum bending moment and support reactions
-    maxCalcMoment = beam.get_bending_moment(return_absmax=True)
-    supportLoads = [np.ceil(abs(beam.get_reaction(pos, 'y'))) for pos in supportPositions]
-    
-    end_time = time.time()  # End timing
-    # print(f"maxMoment function execution time: {end_time - start_time:.2f} seconds")
-    
-    return maxCalcMoment, supportLoads
+    if 0 <= x <= span:
+        # Calculate moment in the left span (0 to L)
+        M = R_A * x - (UDL * x**2) / 2
+    elif span < x <= 2 * span:
+        # Calculate moment in the right span (L to 2L), mirroring the left span
+        x_prime = x - span
+        M = R_C * (span - x_prime) - (UDL * (span - x_prime)**2) / 2
+    else:
+        raise ValueError("The point x is outside the length of the beam.")
 
-def maxLineLoadConvergence(beamLength, supportPositions, target, initial_guess, tolerance=1, max_iterations=100):
+    return M
+
+def maxLineLoadCentralStrut(beamLength,HD="No"):
     """
-    Uses the Newton-Raphson method to find the maximum line load that will produce a 
-    maximum bending moment close to the target moment.
+    Find the maximum allowable distributed load on a beam given the length and available extensions
 
     Parameters:
-    - beamLength: beam length in feet.
-    - supportPositions: list of support positions in feet.
-    - target: target maximum bending moment in ft-lbs.
-    - initial_guess: initial guess for line load in lbs/ft.
-    - tolerance: tolerance for convergence. Default is 1 ft-lbs.
-    - max_iterations: maximum number of iterations for the algorithm.
+    - beamLength: Length of the beam in feet.
+    - HD: If HD extensions are available.
     """
-    start_time = time.time()  # Start timing
-    iterations = 0  # Initialize iteration counter
-    lineLoad = initial_guess
-    print()
+    span = beamLength/2
 
-    def f(lineLoad):
-        maxCalcMoment, _ = maxMoment(beamLength, supportPositions, lineLoad, target)
-        return maxCalcMoment - target
+    file_path = "/home/bpeters2/Indeterminate Beam/wMaxCalc/extensions.csv"
+    df = pd.read_csv(file_path)
 
-    def df(lineLoad):
-        delta = 1e-5
-        return (f(lineLoad + delta) - f(lineLoad)) / delta
+    filtered_df = df[(df['min'] <= beamLength) & (df['max'] >= beamLength)]
 
-    for _ in range(max_iterations):
-        iterations += 1
-        moment_diff = f(lineLoad)
-        if abs(moment_diff) < tolerance:
-            break
-        lineLoad -= moment_diff / df(lineLoad)
-        print(f'Try {lineLoad} lb/ft')
+    if HD == "No":
+        filtered_df = filtered_df[~filtered_df['Ext1'].isin([9.0, 12.0])]
+        filtered_df = filtered_df[~filtered_df['Ext2'].isin([9.0, 12.0])]
+        filtered_df = filtered_df[~filtered_df['Ext3'].isin([9.0, 12.0])]
+        filtered_df = filtered_df[~filtered_df['Ext4'].isin([9.0, 12.0])]
+        negativeExtCap = -590000
+        positiveExtCap = 654000
     
-    # Final evaluation
-    maxCalcMoment, supportLoads = maxMoment(beamLength, supportPositions, lineLoad, target)
+    filtered_df = filtered_df.drop('min', axis=1)
+    filtered_df = filtered_df.drop('max', axis=1)
+
+    filtered_df['Joint1'] = beamLength - 1.88 - (filtered_df['total'] * 3.281)
+    filtered_df['Joint2'] = 0.0
+    filtered_df['Joint3'] = 0.0
+    filtered_df['Joint4'] = 0.0
+
+    for index, row in filtered_df.iterrows():
+        if pd.notnull(row['Ext2']):
+            filtered_df.at[index, 'Joint2'] = row['Joint1'] + (row['Ext1'] * 3.281)
+        if pd.notnull(row['Ext3']) and filtered_df.at[index, 'Joint2'] != 0:
+            filtered_df.at[index, 'Joint3'] = filtered_df.at[index, 'Joint2'] + (row['Ext2'] * 3.281)
+        if pd.notnull(row['Ext4']) and filtered_df.at[index, 'Joint3'] != 0:
+            filtered_df.at[index, 'Joint4'] = filtered_df.at[index, 'Joint3'] + (row['Ext3'] * 3.281)
+
     
-    end_time = time.time()  # End timing
-    print(f"newton_raphson_optimize function execution time: {end_time - start_time:.2f} seconds")
-    print(f"Number of iterations: {iterations}")
-    print(f'Max Line Load is {lineLoad} lbs/ft')
-    print(f'Maximum Bending Moment is {maxCalcMoment} ft-lbs')
 
-    for pos, load in zip(supportPositions, supportLoads):
-        print(f"Support Reaction at {pos}\' is {load} lbs")
+    maxLineLoadHydraulic = np.floor(110000*8/(3*span))
+    maxLineLoadStrut = np.floor(330000*8/(10*span))
+    maxLineLoadNegativeExtension = np.floor(negativeExtCap/(-.125*span**2))
+    maxLineLoadPositiveExtensioin = np.floor(positiveExtCap*128/(9*span**2))
+
+    maxLineLoad = min(maxLineLoadHydraulic, maxLineLoadStrut, maxLineLoadNegativeExtension, maxLineLoadPositiveExtensioin)
+
+    filtered_df = filtered_df.fillna(0)
+
+    # Calculate the moment at each joint
+    filtered_df['Joint1_Moment'] = filtered_df['Joint1'].apply(lambda x: calculate_moment_at_point(maxLineLoad, span, x))
+    filtered_df['Joint2_Moment'] = filtered_df['Joint2'].apply(lambda x: calculate_moment_at_point(maxLineLoad, span, x))
+    filtered_df['Joint3_Moment'] = filtered_df['Joint3'].apply(lambda x: calculate_moment_at_point(maxLineLoad, span, x))
+    filtered_df['Joint4_Moment'] = filtered_df['Joint4'].apply(lambda x: calculate_moment_at_point(maxLineLoad, span, x))
+
+    df = filtered_df
+
+    # Remove configurations where the moment exceeds the capacity of the joint or is negative
+    filtered_df = filtered_df[
+    (filtered_df['Joint1_Moment'] >= 0.0) & (filtered_df['Joint1_Moment'] <= filtered_df['JointCap1']) &
+    (filtered_df['Joint2_Moment'] >= 0.0) & (filtered_df['Joint2_Moment'] <= filtered_df['JointCap2']) &
+    (filtered_df['Joint3_Moment'] >= 0.0) & (filtered_df['Joint3_Moment'] <= filtered_df['JointCap3']) &
+    (filtered_df['Joint4_Moment'] >= 0.0) & (filtered_df['Joint4_Moment'] <= filtered_df['JointCap4'])]
     
-    return lineLoad, supportLoads
+    filtered_df = filtered_df.drop(columns=['Combo'])
+
+    filtered_df = filtered_df.round(2)
+    
+    sorted_df = filtered_df.assign(num_extensions=(filtered_df[['Ext1', 'Ext2', 'Ext3', 'Ext4']] != 0).sum(axis=1)).sort_values(by='num_extensions')
+    print(sorted_df)
+    UDL = maxLineLoad  # Load in lb/ft or N/m
+    span = beamLength/2  # Span in ft or meters
+    step = .01 # Step size for calculating moments
+    x_points = np.arange(start=0, stop=span*2+step, step=step)  # List of points at which to calculate the moment
+
+    # Calculate moments for all points in x_points
+    moments = [calculate_moment_at_point(UDL, span, x) for x in x_points]
+
+    # Create a DataFrame to store points and their corresponding moments
+    data = {'Point': x_points, 'Moment': moments}
+    moment_df = pd.DataFrame(data)
+    moment_df = moment_df.round(2)
+    # print(moment_df)
+    # Save the DataFrame to a .csv file
+    moment_df.to_csv('momentTable.csv')
+    sorted_df.to_csv('finalExtensionTable.csv')
+
+    # Concatenate extension configurations for the first row
+    extConfig = ' + '.join(
+        f"{sorted_df.iloc[0][col]}m" 
+        for col in ['Ext1', 'Ext2', 'Ext3', 'Ext4']
+        if pd.notnull(sorted_df.iloc[0][col]) and sorted_df.iloc[0][col] != 0.0)
 
 
-# Example usage
-lineLoad, supportLoads = maxLineLoadConvergence(100, [5, 27, 59, 73], 3820000, initial_guess=10000)
+    return maxLineLoad,extConfig
 
-
+beamLength = 80  # Example beam length
+HD = "No"  # Example HD setting
+max_load, extension_config = maxLineLoadCentralStrut(beamLength, HD)
+print(f'Length: {beamLength} ft')
+print(f"Max Line Load Load: {int(max_load)} lb/ft")
+print(f"Extension Configuration: {extension_config}")

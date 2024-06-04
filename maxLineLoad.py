@@ -97,6 +97,6 @@ def maxLineLoadConvergence(beamLength, supportPositions, target, initial_guess, 
 
 
 # Example usage
-lineLoad, supportLoads = maxLineLoadConvergence(100, [0,50,100], 654000, initial_guess=10000)
+lineLoad, supportLoads = maxLineLoadConvergence(100, [0,50,100], 479000, initial_guess=10000)
 
 
